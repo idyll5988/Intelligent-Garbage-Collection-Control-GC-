@@ -76,6 +76,12 @@ get_battery_status() {
 get_screen_status() {
     if dumpsys power 2>/dev/null | grep -q "mWakefulness=Awake"; then
         echo "on"
+    elif dumpsys window policy 2>/dev/null | grep -q "mInteractive=true"; then
+        echo "on"
+    elif dumpsys deviceidle 2>/dev/null | grep -q "mScreenOn=true"; then
+        echo "on"
+    elif dumpsys power 2>/dev/null | grep -q "Display Power: state=ON"; then
+        echo "on"
     else
         echo "off"
     fi
@@ -93,6 +99,7 @@ smart_gc_control() {
     local start_time=$(date +%s)
     local start_dirty=$target_dirty_segs
     
+    # 修复：正确获取系统负载
     local system_load=$(get_system_load)
     log_message "📊 系统负载: $system_load"
     
@@ -129,8 +136,13 @@ smart_gc_control() {
             log_message "📲 高负载亮屏状态: 使用低功耗GC (级别1)"
         fi
     else
-        log_message "🌙 灭屏状态: 使用后台GC (gc_idle=1)"
-        lock_value "$get_f2fs_sysfs/gc_idle" "1"
+        if float_compare "$system_load" "<" "10"; then
+            gc_level=3
+            log_message "🌙 灭屏且系统负载低于10: 使用高效GC (级别$gc_level)"
+        else
+            log_message "🌙 灭屏状态: 使用后台GC (gc_idle=1)"
+            lock_value "$get_f2fs_sysfs/gc_idle" "1"
+        fi
     fi
     
     sleep 3
